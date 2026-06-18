@@ -130,17 +130,12 @@ export default function PackHelperPage() {
       const fdPacking = new FormData();
       fdPacking.append("file", packingFile);
 
-      const [pickingRes, packingRes] = await Promise.all([
-        fetch("/api/parse-picking", { method: "POST", body: fdPicking }),
-        fetch("/api/parse-packing", { method: "POST", body: fdPacking }),
-      ]);
-
-      const [pickingJson, packingJson] = await Promise.all([
-        pickingRes.json(),
-        packingRes.json(),
-      ]);
-
+      const pickingRes = await fetch("/api/parse-picking", { method: "POST", body: fdPicking });
+      const pickingJson = await pickingRes.json();
       if (!pickingRes.ok) throw new Error(pickingJson?.error || `Picking List error ${pickingRes.status}`);
+
+      const packingRes = await fetch("/api/parse-packing", { method: "POST", body: fdPacking });
+      const packingJson = await packingRes.json();
       if (!packingRes.ok) throw new Error(packingJson?.error || `Packing List error ${packingRes.status}`);
 
       const { products, error: pickErr } = pickingJson;
