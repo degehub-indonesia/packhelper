@@ -1,7 +1,31 @@
-import { PDFParse } from "pdf-parse";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
+const PROMPT = `Kamu adalah sistem ekstraksi data dari dokumen Packing List marketplace Indonesia (Tokopedia, Shopee, dll).
+
+Dokumen ini berisi BANYAK pesanan. Setiap pesanan punya nomor resi/tracking dan daftar produk.
+
+Tugasmu: ekstrak semua pesanan dengan resi dan produknya.
+
+Kembalikan dalam format JSON array (satu objek per baris produk per pesanan):
+[
+  {"resi": "6 digit terakhir nomor tracking", "sku": "Seller SKU produk", "qty": jumlah_angka}
+]
+
+Aturan:
+- resi = 6 digit TERAKHIR dari nomor tracking/resi pengiriman
+- Gunakan Seller SKU (bukan variant SKU) sebagai sku
+- qty harus angka (integer)
+- Jika satu pesanan punya 3 produk, buat 3 objek dengan resi yang sama
+- Kembalikan HANYA JSON valid, tanpa markdown code block, tanpa teks tambahan
+- Jika tidak ada data, kembalikan []`;
+
 export async function POST(req: NextRequest) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "AI service not configured." }, { status: 503 });
+  }
+
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -15,12 +39,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const parser = new PDFParse({ data: buffer });
-    const textResult = await parser.getText();
-    const orders = parsePackingList(textResult.text);
+    const bytes = await file.arrayBuffer();
+    const base64 = Buffer.from(bytes).toString("base64");
 
-    if (!orders.length) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const result = await model.generateContent([
+      PROMPT,
+      { inlineData: { data: base64, mimeType: "application/pdf" } },
+    ]);
+
+    const text = result.response.text().trim();
+
+    let orders: unknown;
+    try {
+      orders = JSON.parse(text);
+    } catch {
+      const match = text.match(/\[[\s\S]*\]/);
+      orders = match ? JSON.parse(match[0]) : [];
+    }
+
+    if (!Array.isArray(orders) || !orders.length) {
       return NextResponse.json({ error: "Tidak ada order yang ditemukan di Packing List." }, { status: 422 });
     }
 
@@ -29,38 +69,4 @@ export async function POST(req: NextRequest) {
     console.error("[parse-packing]", err);
     return NextResponse.json({ error: "Gagal membaca Packing List." }, { status: 500 });
   }
-}
-
-interface PackingOrder { resi: string; sku: string; qty: number }
-
-function parsePackingList(text: string): PackingOrder[] {
-  const orders: PackingOrder[] = [];
-
-  // Split text into per-page blocks using the page separator "-- N of M --"
-  const pages = text.split(/--\s*\d+\s*of\s*\d+\s*--/);
-
-  for (const page of pages) {
-    // Extract resi: last 6 digits of tracking number
-    const trackingMatch = page.match(/Tracking number:(\S+)/);
-    if (!trackingMatch) continue;
-    const resi = trackingMatch[1].slice(-6);
-
-    // Extract product rows: "variantSKU\tsellerSKU\tqty" (NO 18-digit order ID after)
-    // Format: e.g. "Default\tScreen Care\t1" or "Abu-Abu\tKain-Abu\t2"
-    const rowPattern = /^([^\t\n]+)\t([^\t\n]+)\t(\d{1,4})$/gm;
-
-    for (const match of page.matchAll(rowPattern)) {
-      const sellerSKU = match[2].trim();
-      const qty = parseInt(match[3], 10);
-
-      if (!sellerSKU || qty <= 0) continue;
-
-      // Skip header row
-      if (sellerSKU === "Seller SKU") continue;
-
-      orders.push({ resi, sku: sellerSKU, qty });
-    }
-  }
-
-  return orders;
 }
