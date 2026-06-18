@@ -38,36 +38,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Upload file PDF Packing List." }, { status: 400 });
   }
 
-  try {
-    const bytes = await file.arrayBuffer();
-    const base64 = Buffer.from(bytes).toString("base64");
+  const bytes = await file.arrayBuffer();
+  const base64 = Buffer.from(bytes).toString("base64");
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-    const result = await model.generateContent([
-      PROMPT,
-      { inlineData: { data: base64, mimeType: "application/pdf" } },
-    ]);
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 12000;
 
-    const text = result.response.text().trim();
+  let lastError: Error | null = null;
 
-    let orders: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      orders = JSON.parse(text);
-    } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      orders = match ? JSON.parse(match[0]) : [];
-    }
+      const result = await model.generateContent([
+        PROMPT,
+        { inlineData: { data: base64, mimeType: "application/pdf" } },
+      ]);
 
-    if (!Array.isArray(orders) || !orders.length) {
-      return NextResponse.json({ error: "Tidak ada order yang ditemukan di Packing List." }, { status: 422 });
-    }
+      const text = result.response.text().trim();
 
-    return NextResponse.json({ orders });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[parse-packing]", msg);
-    return NextResponse.json({ error: `Gagal membaca Packing List: ${msg}` }, { status: 500 });
+      let orders: unknown;
+      try {
+        orders = JSON.parse(text);
+      } catch {
+        const match = text.match(/\[[\s\S]*\]/);
+        orders = match ? JSON.parse(match[0]) : [];
+      }
+
+      if (!Array.isArray(orders) || !orders.length) {
+        return NextResponse.json({ error: "Tidak ada order yang ditemukan di Packing List." }, { status: 422 });
+      }
+
+      return NextResponse.json({ orders });
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const is429 = lastError.message.includes("429") || lastError.message.includes("Too Many Requests");
+
+      if (is429 && attempt < MAX_RETRIES) {
+        console.warn(`[parse-packing] rate limited, retry ${attempt}/${MAX_RETRIES} in ${RETRY_DELAY_MS / 1000}s`);
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+      break;
+    }
   }
+
+  console.error("[parse-packing]", lastError?.message);
+  return NextResponse.json({ error: `Gagal membaca Packing List: ${lastError?.message}` }, { status: 500 });
 }
