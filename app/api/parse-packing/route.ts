@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ orders });
   } catch (err) {
-    console.error("[parse-packing]", err);
-    return NextResponse.json({ error: "Gagal membaca Packing List." }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[parse-packing]", msg);
+    return NextResponse.json({ error: `Gagal membaca Packing List: ${msg}` }, { status: 500 });
   }
 }

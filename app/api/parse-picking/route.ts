@@ -63,7 +63,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ products });
   } catch (err) {
-    console.error("[parse-picking]", err);
-    return NextResponse.json({ error: "Gagal membaca Picking List." }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[parse-picking]", msg);
+    return NextResponse.json({ error: `Gagal membaca Picking List: ${msg}` }, { status: 500 });
   }
 }
