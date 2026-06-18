@@ -9,13 +9,13 @@ Tugasmu: ekstrak semua pesanan dengan resi dan produknya.
 
 Kembalikan dalam format JSON array (satu objek per baris produk per pesanan):
 [
-  {"resi": "6 digit terakhir nomor tracking", "sku": "Seller SKU produk", "qty": jumlah_angka}
+  {"resi": "6 digit terakhir nomor tracking", "name": "nama lengkap produk", "qty": jumlah_angka}
 ]
 
 Aturan:
 - resi = 6 digit TERAKHIR dari nomor tracking/resi pengiriman
-- Gunakan Seller SKU (bukan variant SKU) sebagai sku
-- qty harus angka (integer)
+- name = nama produk selengkap mungkin (gunakan nama produk atau Seller SKU, bukan variant seperti warna/ukuran saja)
+- qty harus angka (integer), bukan string
 - Jika satu pesanan punya 3 produk, buat 3 objek dengan resi yang sama
 - Kembalikan HANYA JSON valid, tanpa markdown code block, tanpa teks tambahan
 - Jika tidak ada data, kembalikan []`;

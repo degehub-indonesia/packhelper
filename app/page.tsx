@@ -9,8 +9,7 @@ import {
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 
-interface StockProduct { name: string; sku: string; qty: number }
-interface RawPackingOrder { resi: string; sku: string; qty: number }
+interface RawPackingOrder { resi: string; name: string; qty: number }
 interface OrderItem { name: string; qty: number }
 interface ExtractedOrder { id: string; resi: string; items: OrderItem[] }
 type Phase = "upload" | "processing" | "results";
@@ -92,7 +91,6 @@ function FilePicker({
 
 export default function PackHelperPage() {
   const [phase, setPhase] = useState<Phase>("upload");
-  const [pickingFile, setPickingFile] = useState<File | null>(null);
   const [packingFile, setPackingFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,50 +117,32 @@ export default function PackHelperPage() {
   /* ── Submit ─────────────────────────────────────────────────────────────── */
 
   const handleSubmit = async () => {
-    if (!pickingFile || !packingFile) return;
+    if (!packingFile) return;
     setPhase("processing");
     setError(null);
 
     try {
-      const fdPicking = new FormData();
-      fdPicking.append("file", pickingFile);
+      const fd = new FormData();
+      fd.append("file", packingFile);
 
-      const fdPacking = new FormData();
-      fdPacking.append("file", packingFile);
+      const res = await fetch("/api/parse-packing", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || `Error ${res.status}`);
 
-      const pickingRes = await fetch("/api/parse-picking", { method: "POST", body: fdPicking });
-      const pickingJson = await pickingRes.json();
-      if (!pickingRes.ok) throw new Error(pickingJson?.error || `Picking List error ${pickingRes.status}`);
+      const { orders: rawOrders } = json;
 
-      const packingRes = await fetch("/api/parse-packing", { method: "POST", body: fdPacking });
-      const packingJson = await packingRes.json();
-      if (!packingRes.ok) throw new Error(packingJson?.error || `Packing List error ${packingRes.status}`);
-
-      const { products, error: pickErr } = pickingJson;
-      const { orders: rawOrders, error: packErr } = packingJson;
-
-      if (pickErr || packErr) throw new Error(pickErr || packErr);
-
-      if (!Array.isArray(products) || !Array.isArray(rawOrders) || !rawOrders.length) {
+      if (!Array.isArray(rawOrders) || !rawOrders.length) {
         setError("Tidak ada data yang berhasil diekstrak. Pastikan file yang diupload benar.");
         setPhase("upload");
         return;
       }
-
-      const stockMap: Record<string, string> = {};
-      (products as StockProduct[]).forEach((p) => {
-        stockMap[p.sku] = p.name;
-      });
 
       const orderMap: Record<string, ExtractedOrder> = {};
       (rawOrders as RawPackingOrder[]).forEach((o) => {
         if (!orderMap[o.resi]) {
           orderMap[o.resi] = { id: genId(), resi: o.resi, items: [] };
         }
-        orderMap[o.resi].items.push({
-          name: stockMap[o.sku] || o.sku,
-          qty: o.qty,
-        });
+        orderMap[o.resi].items.push({ name: o.name, qty: o.qty });
       });
 
       const builtOrders = Object.values(orderMap);
@@ -179,7 +159,6 @@ export default function PackHelperPage() {
 
   const reset = () => {
     setPhase("upload");
-    setPickingFile(null);
     setPackingFile(null);
     setOrders([]);
     setPickedItems(new Set());
@@ -251,7 +230,7 @@ export default function PackHelperPage() {
             </div>
             <h1 className="text-2xl font-black text-stone-900 mb-2 tracking-tight">PackHelper</h1>
             <p className="text-sm text-stone-500 max-w-sm mx-auto leading-relaxed">
-              Upload Picking List dan Packing List dari Tokopedia. AI akan otomatis menyusun rekap stok dan daftar packing per resi.
+              Upload Packing List dari Tokopedia. AI akan otomatis menyusun rekap stok dan daftar packing per resi.
             </p>
           </div>
 
@@ -263,28 +242,18 @@ export default function PackHelperPage() {
           )}
 
           <div className="bg-white border border-stone-200/60 rounded-2xl p-5 shadow-sm mb-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <FilePicker
-                label="Picking List"
-                hint="PDF Picking List dari Tokopedia"
-                file={pickingFile}
-                onFile={setPickingFile}
-                onClear={() => setPickingFile(null)}
-              />
-              <div className="w-px bg-stone-100 hidden sm:block" />
-              <FilePicker
-                label="Packing List"
-                hint="PDF Packing List dari Tokopedia"
-                file={packingFile}
-                onFile={setPackingFile}
-                onClear={() => setPackingFile(null)}
-              />
-            </div>
+            <FilePicker
+              label="Packing List"
+              hint="PDF Packing List dari Tokopedia / Shopee"
+              file={packingFile}
+              onFile={setPackingFile}
+              onClear={() => setPackingFile(null)}
+            />
           </div>
 
           <button
             onClick={handleSubmit}
-            disabled={!pickingFile || !packingFile}
+            disabled={!packingFile}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#064e3b] to-emerald-700 hover:from-emerald-800 hover:to-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20"
           >
             <Package className="w-4 h-4" />
@@ -293,8 +262,8 @@ export default function PackHelperPage() {
 
           <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { step: "1", title: "Upload 2 File", desc: "Picking List untuk rekap stok, Packing List untuk per resi" },
-              { step: "2", title: "AI Proses", desc: "AI baca nama produk, qty, dan resi dari kedua dokumen" },
+              { step: "1", title: "Upload 1 File", desc: "Cukup Packing List — AI baca semua yang diperlukan" },
+              { step: "2", title: "AI Proses", desc: "AI ekstrak nama produk, qty, dan resi dari dokumen" },
               { step: "3", title: "Picking & Packing", desc: "Centang stok & verifikasi setiap paket sebelum kirim" },
             ].map(({ step, title, desc }) => (
               <div key={step} className="bg-white border border-stone-200/60 rounded-2xl p-4 text-center">
@@ -318,7 +287,7 @@ export default function PackHelperPage() {
             </div>
             <div>
               <p className="font-bold text-stone-800 mb-1">AI sedang memproses dokumen…</p>
-              <p className="text-sm text-stone-400">Membaca Picking List dan Packing List, harap tunggu</p>
+              <p className="text-sm text-stone-400">Membaca Packing List, harap tunggu</p>
             </div>
             <div className="flex items-center justify-center gap-1.5">
               {[0, 1, 2].map((i) => (
