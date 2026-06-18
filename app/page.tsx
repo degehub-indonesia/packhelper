@@ -89,9 +89,13 @@ function FilePicker({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 
+const STORAGE_KEY = "packhelper_gemini_key";
+
 export default function PackHelperPage() {
   const [phase, setPhase] = useState<Phase>("upload");
   const [packingFile, setPackingFile] = useState<File | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [orders, setOrders] = useState<ExtractedOrder[]>([]);
@@ -101,6 +105,8 @@ export default function PackHelperPage() {
 
   useEffect(() => {
     setPrintDate(new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }));
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) setApiKey(saved);
   }, []);
 
   const recap = computeRecap(orders);
@@ -117,13 +123,15 @@ export default function PackHelperPage() {
   /* ── Submit ─────────────────────────────────────────────────────────────── */
 
   const handleSubmit = async () => {
-    if (!packingFile) return;
+    if (!packingFile || !apiKey.trim()) return;
+    localStorage.setItem(STORAGE_KEY, apiKey.trim());
     setPhase("processing");
     setError(null);
 
     try {
       const fd = new FormData();
       fd.append("file", packingFile);
+      fd.append("apiKey", apiKey.trim());
 
       const res = await fetch("/api/parse-packing", { method: "POST", body: fd });
       const json = await res.json();
@@ -241,7 +249,7 @@ export default function PackHelperPage() {
             </div>
           )}
 
-          <div className="bg-white border border-stone-200/60 rounded-2xl p-5 shadow-sm mb-4">
+          <div className="bg-white border border-stone-200/60 rounded-2xl p-5 shadow-sm mb-3">
             <FilePicker
               label="Packing List"
               hint="PDF Packing List dari Tokopedia / Shopee"
@@ -251,9 +259,42 @@ export default function PackHelperPage() {
             />
           </div>
 
+          <div className="bg-white border border-stone-200/60 rounded-2xl p-5 shadow-sm mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-stone-700 uppercase tracking-wide">Gemini API Key</p>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-emerald-600 hover:text-emerald-800 font-medium underline underline-offset-2"
+              >
+                Dapatkan key gratis →
+              </a>
+            </div>
+            <div className="relative">
+              <input
+                type={showKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full text-sm font-mono bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 pr-20 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent placeholder:text-stone-300"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-stone-400 hover:text-stone-600 font-medium"
+              >
+                {showKey ? "Sembunyikan" : "Tampilkan"}
+              </button>
+            </div>
+            <p className="text-[11px] text-stone-400 mt-2 leading-relaxed">
+              Key disimpan di browser kamu, tidak dikirim ke server kami.
+            </p>
+          </div>
+
           <button
             onClick={handleSubmit}
-            disabled={!packingFile}
+            disabled={!packingFile || !apiKey.trim()}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#064e3b] to-emerald-700 hover:from-emerald-800 hover:to-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20"
           >
             <Package className="w-4 h-4" />

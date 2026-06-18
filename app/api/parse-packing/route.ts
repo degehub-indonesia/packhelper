@@ -21,16 +21,16 @@ Aturan:
 - Jika tidak ada data, kembalikan []`;
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "AI service not configured." }, { status: 503 });
-  }
-
   let formData: FormData;
   try {
     formData = await req.formData();
   } catch {
     return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
+  }
+
+  const apiKey = (formData.get("apiKey") as string | null)?.trim() || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "API key tidak ditemukan. Masukkan Gemini API key kamu." }, { status: 401 });
   }
 
   const file = formData.get("file") as File;
