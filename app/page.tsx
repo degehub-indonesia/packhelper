@@ -215,16 +215,27 @@ export default function PackHelperPage() {
             </div>
           </div>
 
-          {phase === "results" && (
-            <div className="hidden md:flex items-center gap-5 text-xs">
-              <span className="text-stone-400">
-                {orders.length} pesanan · {recap.length} jenis · {totalUnits} unit
-              </span>
-              <span className={`font-mono font-bold tabular-nums ${completedCount === orders.length ? "text-emerald-700" : "text-stone-600"}`}>
-                Packed: {completedCount}/{orders.length}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            {phase === "results" && (
+              <div className="hidden md:flex items-center gap-5 text-xs">
+                <span className="text-stone-400">
+                  {orders.length} pesanan · {recap.length} jenis · {totalUnits} unit
+                </span>
+                <span className={`font-mono font-bold tabular-nums ${completedCount === orders.length ? "text-emerald-700" : "text-stone-600"}`}>
+                  Packed: {completedCount}/{orders.length}
+                </span>
+              </div>
+            )}
+            <button
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="text-xs text-stone-400 hover:text-stone-600 transition-colors flex items-center gap-1"
+            >
+              Keluar
+            </button>
+          </div>
         </div>
       </header>
 
