@@ -1,30 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { redis, KEYS, type CodeMeta } from "@/lib/redis";
+import { getSupabase } from "@/lib/db";
 import { nanoid } from "@/lib/codegen";
 
 export async function GET() {
-  const codes: string[] = await redis.smembers(KEYS.codes);
-  const entries = await Promise.all(
-    codes.map(async (code) => {
-      const meta: CodeMeta | null = await redis.get(KEYS.code(code));
-      return { code, ...(meta ?? { label: "", createdAt: "" }) };
-    })
-  );
-  entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return NextResponse.json(entries);
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("access_codes")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = getSupabase();
   const { label, count = 1 } = await req.json();
-  const created: string[] = [];
+  const rows = Array.from({ length: Math.min(count, 50) }, () => ({
+    code: `PH-${nanoid(4)}-${nanoid(4)}`,
+    label: label || "",
+  }));
 
-  for (let i = 0; i < Math.min(count, 50); i++) {
-    const code = `PH-${nanoid(4)}-${nanoid(4)}`;
-    const meta: CodeMeta = { label: label || "", createdAt: new Date().toISOString() };
-    await redis.sadd(KEYS.codes, code);
-    await redis.set(KEYS.code(code), meta);
-    created.push(code);
-  }
-
-  return NextResponse.json({ created });
+  const { data, error } = await supabase.from("access_codes").insert(rows).select("code");
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ created: data?.map((r) => r.code) ?? [] });
 }

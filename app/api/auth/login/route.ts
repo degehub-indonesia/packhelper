@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { redis, KEYS, type CodeMeta } from "@/lib/redis";
+import { getSupabase } from "@/lib/db";
 import { signUserToken, cookieName, cookieOpts } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -9,17 +9,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email dan kode akses wajib diisi." }, { status: 400 });
 
   const normalized = (code as string).trim().toUpperCase();
-  const valid = await redis.sismember(KEYS.codes, normalized);
-  if (!valid)
+  const supabase = getSupabase();
+
+  const { data, error } = await supabase
+    .from("access_codes")
+    .select("*")
+    .eq("code", normalized)
+    .single();
+
+  if (error || !data)
     return NextResponse.json({ error: "Kode akses tidak valid atau sudah dicabut." }, { status: 401 });
 
-  const meta: CodeMeta | null = await redis.get(KEYS.code(normalized));
-  if (meta && !meta.firstUsedBy) {
-    await redis.set(KEYS.code(normalized), {
-      ...meta,
-      firstUsedBy: email,
-      firstUsedAt: new Date().toISOString(),
-    });
+  if (!data.first_used_by) {
+    await supabase
+      .from("access_codes")
+      .update({ first_used_by: email.trim().toLowerCase(), first_used_at: new Date().toISOString() })
+      .eq("code", normalized);
   }
 
   const token = await signUserToken(email.trim().toLowerCase(), normalized);
